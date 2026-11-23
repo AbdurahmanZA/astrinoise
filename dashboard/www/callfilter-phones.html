@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Astri-noise - Phones</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: #f4f5f7; color: #24292e; padding: 24px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #6a737d; font-size: 13px; margin-bottom: 16px; }
+  .card { background: #fff; border: 1px solid #e1e4e8; border-radius: 10px; padding: 16px 20px; margin-bottom: 16px; }
+  .muted { color: #8a939b; font-size: 12px; }
+  .btn { background: #f4f5f7; border: 1px solid #cfd3d8; border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; color: #24292e; }
+  .btn:hover { background: #eceef1; }
+  .btn.sel { background: #1971c2; color: #fff; border-color: #1971c2; }
+  .btn.sel.off { background: #495057; border-color: #495057; }
+  .tog { min-width: 64px; font-weight: 600; }
+  .tog.on { background: #2f9e44; color: #fff; border-color: #2f9e44; }
+  .tog.off { background: #fff; color: #6a737d; }
+  input { font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid #cfd3d8; border-radius: 6px; background: #fff; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 8px; font-size: 13px; border-bottom: 1px solid #eee; }
+  th { color: #6a737d; font-weight: 500; font-size: 11px; text-transform: uppercase; position: sticky; top: 0; background: #fff; }
+  .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; border: 1px solid #e1e4e8; background: #f6f8fa; }
+  .chip.ok { background: #ebfbee; border-color: #b2f2bb; color: #2b8a3e; }
+  .bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  #msg { min-height: 20px; font-size: 13px; color: #1971c2; margin: 4px 0 8px; }
+  a.link { color: #1971c2; text-decoration: none; }
+  .big { font-size: 15px; font-weight: 600; }
+  .warn { background: #fff4e6; border: 1px solid #ffd8a8; color: #d9480f; border-radius: 8px; padding: 8px 12px; font-size: 13px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<h1>Call filter: phones</h1>
+<div class="sub"><a class="link" href="callfilter.html">← Call filter</a> · Choose which phones get their microphone cleaned on outbound calls. Changes apply to new calls straight away.</div>
+
+<div class="card">
+  <div class="bar">
+    <span class="big">Which calls:</span>
+    <button class="btn" data-mode="off">Off</button>
+    <button class="btn" data-mode="all">All calls</button>
+    <button class="btn" data-mode="some">Some calls (phones switched ON below)</button>
+  </div>
+  <div class="muted" id="modeNote" style="margin-top:8px"></div>
+  <div class="warn" id="offWarn" style="display:none">The filter is <b>Off</b>: nothing is cleaned, whatever the list below says. Choose All calls or Some calls above to start.</div>
+</div>
+
+<div class="card">
+  <div class="bar" style="margin-bottom:8px">
+    <input id="q" placeholder="Search phone, name or agent" style="width:240px">
+    <label class="muted"><input type="checkbox" id="activeOnly" checked> Active phones only (online now or used in the last 7 days)</label>
+    <span class="muted" id="count"></span>
+    <span style="margin-left:auto"></span>
+    <button class="btn" id="allOn">Switch shown phones ON</button>
+    <button class="btn" id="allOff">Switch shown phones OFF</button>
+  </div>
+  <div id="msg"></div>
+  <table>
+    <thead><tr><th>Phone</th><th>Name</th><th>Agent on it now</th><th>Online</th><th>Last call</th><th>Calls 30 d</th><th>Cleaned</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="7" class="muted">Loading the phones from the PBX (takes up to 20 seconds)…</td></tr></tbody>
+  </table>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const NOTES = {
+  off: 'Off: no call is cleaned.',
+  all: 'All calls: every phone is cleaned, except phones switched OFF below.',
+  some: 'Some calls: only phones switched ON below are cleaned. All other phones go out as normal.',
+};
+let phones = [], cfg = { mode: 'off', phones: {} };
+
+function say(t, bad) { $('msg').textContent = t; $('msg').style.color = bad ? '#c92a2a' : '#1971c2'; }
+function send(op, done) {
+  return fetch('callfilter.php', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'callfilter' }, body: JSON.stringify(op) })
+    .then((r) => r.json()).then((d) => { if (!d.ok) throw new Error(d.error || 'refused'); cfg = d; say(done); render(); })
+    .catch((e) => say('Not saved: ' + e.message, true));
+}
+// Same rule as the dialplan ([rnnoise-decide]): a phone set off never; "all" = everyone else; "some" = phones set on.
+const cleaned = (ext) => { const v = (cfg.phones || {})[ext]; return cfg.mode === 'all' ? v !== 'off' : cfg.mode === 'some' ? v === 'on' : false; };
+function shown() {
+  const q = $('q').value.trim().toLowerCase(), act = $('activeOnly').checked;
+  return phones.filter((p) => (!act || p.registered || (p.days_unused != null && p.days_unused <= 7) || (cfg.phones || {})[p.ext]) &&
+    (!q || [p.ext, p.name, p.logged_on, p.owner].join(' ').toLowerCase().includes(q)));
+}
+function render() {
+  document.querySelectorAll('[data-mode]').forEach((b) => { b.className = 'btn' + (b.dataset.mode === cfg.mode ? ' sel' + (cfg.mode === 'off' ? ' off' : '') : ''); });
+  $('modeNote').textContent = NOTES[cfg.mode] || '';
+  $('offWarn').style.display = cfg.mode === 'off' ? '' : 'none';
+  const list = shown();
+  $('count').textContent = list.length + ' shown · ' + phones.filter((p) => cleaned(p.ext)).length + ' of ' + phones.length + ' phones cleaned';
+  $('rows').innerHTML = list.map((p) => {
+    const set = (cfg.phones || {})[p.ext], on = set === 'on' || (cfg.mode === 'all' && set !== 'off');
+    return '<tr><td><b>' + esc(p.ext) + '</b></td><td>' + esc(p.name) + '</td><td>' + esc(p.logged_on || p.owner || '') + '</td>' +
+      '<td>' + (p.registered ? '<span class="chip ok">online</span>' : '<span class="muted">' + (p.last_seen ? esc(p.last_seen.slice(0, 16)) : 'never') + '</span>') + '</td>' +
+      '<td class="muted">' + esc(p.last_call ? p.last_call.slice(0, 16) : '—') + '</td><td>' + (p.calls_30d || 0) + '</td>' +
+      '<td><button class="btn tog ' + (on ? 'on' : 'off') + '" data-ext="' + esc(p.ext) + '" data-on="' + (on ? 1 : 0) + '">' + (on ? 'ON' : 'OFF') + '</button>' +
+      (cleaned(p.ext) ? '' : on ? ' <span class="muted">(filter Off)</span>' : '') + '</td></tr>';
+  }).join('') || '<tr><td colspan="7" class="muted">No phones match.</td></tr>';
+}
+function loadCfg() { return fetch('callfilter.php', { cache: 'no-store' }).then((r) => r.json()).then((d) => { if (d.ok) cfg = d; }); }
+
+Promise.all([loadCfg(), fetch('phones.php', { cache: 'no-store' }).then((r) => r.json())]).then(([, ext]) => {
+  phones = ext.rows || [];
+  for (const e of Object.keys(cfg.phones || {})) if (!phones.some((p) => p.ext === e)) phones.push({ ext: e, name: '(agent number / not a phone)' });
+  phones.sort((a, b) => a.ext.localeCompare(b.ext, undefined, { numeric: true }));
+  render();
+}).catch(() => say('Could not load the phones from the PBX.', true));
+
+$('q').addEventListener('input', render);
+$('activeOnly').addEventListener('change', render);
+document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => {
+  const m = b.dataset.mode;
+  if (m === cfg.mode) return;
+  if (m === 'all' && !confirm('Clean EVERY agent’s outbound call (except phones switched OFF)?')) return;
+  send({ op: 'mode', mode: m }, NOTES[m]);
+}));
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('button.tog');
+  if (!b) return;
+  const on = b.dataset.on !== '1';
+  send({ op: 'phones', exts: [b.dataset.ext], state: on ? 'on' : 'off' }, b.dataset.ext + (on ? ' ON' : ' OFF') + ' for new calls.');
+});
+function bulk(on) {
+  const exts = shown().map((p) => p.ext).filter((x) => /^\d{2,8}$/.test(x));
+  if (!exts.length) return;
+  if (!confirm('Switch ' + exts.length + ' phones ' + (on ? 'ON' : 'OFF') + '?')) return;
+  send({ op: 'phones', exts, state: on ? 'on' : 'off' }, exts.length + ' phones ' + (on ? 'ON' : 'OFF') + '.');
+}
+$('allOn').addEventListener('click', () => bulk(true));
+$('allOff').addEventListener('click', () => bulk(false));
+</script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Astri-noise - Call filter</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: #f4f5f7; color: #24292e; padding: 24px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #6a737d; font-size: 13px; margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+  .card { background: #fff; border: 1px solid #e1e4e8; border-radius: 10px; padding: 18px 20px; }
+  .wide { grid-column: 1 / -1; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; display: inline-block; }
+  .dot.ok { background: #2f9e44; } .dot.off { background: #adb5bd; } .dot.bad { background: #e03131; }
+  .row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 6px 0; border-bottom: 1px dashed #eee; }
+  .row:last-child { border-bottom: none; }
+  .label { color: #6a737d; }
+  .muted { color: #8a939b; font-size: 12px; }
+  .btn { background: #f4f5f7; border: 1px solid #cfd3d8; border-radius: 6px; padding: 8px 14px; font-size: 13px; cursor: pointer; color: #24292e; }
+  .btn:hover { background: #eceef1; }
+  .btn.sel { background: #1971c2; color: #fff; border-color: #1971c2; }
+  .btn.sel.off { background: #495057; border-color: #495057; }
+  .modes { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 10px; }
+  input[type=number] { width: 70px; font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid #cfd3d8; border-radius: 6px; }
+  .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; border: 1px solid #e1e4e8; background: #f6f8fa; }
+  .chip.ok { background: #ebfbee; border-color: #b2f2bb; color: #2b8a3e; }
+  .chip.bad { background: #fff5f5; border-color: #ffc9c9; color: #c92a2a; }
+  #msg { min-height: 20px; font-size: 13px; color: #1971c2; margin-bottom: 8px; }
+  a.link { color: #1971c2; text-decoration: none; }
+  ul { margin: 6px 0 0 18px; padding: 0; font-size: 13px; line-height: 1.6; }
+  .big { font-size: 26px; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Call filter <span class="muted" style="font-weight:400">· cleans the agent's microphone noise</span></h1>
+<div class="sub">Runs inside Asterisk on this PBX (Astri-noise). Only the agent's voice is cleaned, on outbound calls to customers. Changes apply to new calls straight away; calls already up are not touched.</div>
+<div id="msg"></div>
+
+<div class="grid">
+  <div class="card wide">
+    <h2><span class="dot" id="dot"></span>Which calls are cleaned <span class="muted" id="at" style="font-weight:400;margin-left:auto"></span></h2>
+    <div class="modes">
+      <button class="btn" data-mode="off">Off</button>
+      <button class="btn" data-mode="all">All calls</button>
+      <button class="btn" data-mode="some">Some calls (choose phones)</button>
+    </div>
+    <div id="modeNote" style="font-size:13px;margin-bottom:8px"></div>
+    <div class="row"><span class="label">Phones switched on / off in the phone list</span><span><span id="phoneCounts"></span> · <a class="link" href="callfilter-phones.html">Open the phone list →</a></span></div>
+    <div class="row"><span class="label">Strength (100 = full cleaning; lower mixes some of the original back in)</span><span><input type="number" id="strength" min="1" max="100" step="5"> %</span></div>
+    <div class="row"><span class="label">Most cleaned calls at once (0 = no limit; more calls go out uncleaned)</span><input type="number" id="max" min="0" max="500"></div>
+    <div class="row"><span class="label">Filter module in Asterisk</span><span id="module"></span></div>
+  </div>
+
+  <div class="card">
+    <h2>Right now</h2>
+    <div class="big" id="active">–</div>
+    <div class="muted" style="margin-bottom:10px">calls being cleaned at this moment</div>
+    <div class="row"><span class="label">Work per 20 ms of audio (average)</span><span id="avg"></span></div>
+    <div class="row"><span class="label">Slowest 20 ms so far (must stay well under 20 ms)</span><span id="max"></span></div>
+    <div class="row"><span class="label">Late audio (must stay 0)</span><span id="late"></span></div>
+    <div class="row"><span class="label">Audio cleaned since the module started</span><span id="mins"></span></div>
+    <div class="muted" style="margin-top:6px">One cleaned call costs 1.5-5 % of one CPU core, depending on the CPU (see the work per 20 ms above).</div>
+  </div>
+
+  <div class="card">
+    <h2>Try it from any desk phone</h2>
+    <ul>
+      <li><b>*7866</b> and talk: the echo test plays your own voice back <b>cleaned</b>. Compare with <b>*43</b>.</li>
+      <li>Works whatever the switch above says; it only affects your own test call.</li>
+    </ul>
+  </div>
+
+  <div class="card wide">
+    <h2>What it does</h2>
+    <ul>
+      <li>Cleans the agent's microphone (fans, hum, keyboards, background voices) on calls that go out through a trunk: desk phones and softphones. Internal calls are never touched.</li>
+      <li>Never on an emergency route.</li>
+      <li>Adds a fixed 50 ms delay; the customer's voice is untouched.</li>
+      <li>Recordings of outbound calls keep the agent's original voice.</li>
+      <li><b>Off</b> stops it for every new call at once.</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let S = null, editing = false;
+const NOTES = {
+  off: 'Off: no call is cleaned.',
+  all: 'All calls: every agent’s outbound call is cleaned, except phones switched OFF in the phone list.',
+  some: 'Some calls: only phones switched ON in the phone list are cleaned. Every other phone goes out as normal.',
+};
+function say(t, bad) { $('msg').textContent = t; $('msg').style.color = bad ? '#c92a2a' : '#1971c2'; if (t) setTimeout(() => { if ($('msg').textContent === t) $('msg').textContent = ''; }, 6000); }
+function send(op, done) {
+  return fetch('callfilter.php', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'callfilter' }, body: JSON.stringify(op) })
+    .then((r) => r.json()).then((d) => { if (!d.ok) throw new Error(d.error || 'refused'); say(done); render(d); })
+    .catch((e) => say('Not saved: ' + e.message, true));
+}
+function render(d) {
+  S = d;
+  document.querySelectorAll('[data-mode]').forEach((b) => { b.className = 'btn' + (b.dataset.mode === d.mode ? ' sel' + (d.mode === 'off' ? ' off' : '') : ''); });
+  $('modeNote').textContent = NOTES[d.mode] || '';
+  $('dot').className = 'dot ' + (!d.module.loaded ? 'bad' : d.mode === 'off' ? 'off' : 'ok');
+  $('at').textContent = 'updated ' + d.at.slice(11);
+  const ph = Object.values(d.phones || {});
+  $('phoneCounts').textContent = ph.filter((v) => v === 'on').length + ' on / ' + ph.filter((v) => v === 'off').length + ' off';
+  if (!editing) { $('strength').value = d.strength || 100; $('max').value = d.max || 0; }
+  $('module').innerHTML = d.module.loaded ? '<span class="chip ok">loaded</span>' : '<span class="chip bad">NOT loaded: nothing is cleaned</span>';
+  const s = d.stats || {};
+  $('active').textContent = s.active ?? '–';
+  $('avg').textContent = s.avg_us != null ? (s.avg_us / 1000).toFixed(2) + ' ms' : '–';
+  $('max').textContent = s.max_us != null ? (s.max_us / 1000).toFixed(1) + ' ms' : '–';
+  $('late').innerHTML = s.underruns ? '<span class="chip bad">' + s.underruns + '</span>' : '<span class="chip ok">0</span>';
+  $('mins').textContent = s.frames != null ? Math.round(s.frames / 50 / 60) + ' min' : '–';
+}
+function load() {
+  fetch('callfilter.php', { cache: 'no-store' }).then((r) => r.json()).then(render).catch(() => say('Could not reach the PBX.', true));
+}
+document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => {
+  const m = b.dataset.mode;
+  if (!S || m === S.mode) { if (m === 'some') location.href = 'callfilter-phones.html'; return; }
+  if (m === 'all' && !confirm('Clean EVERY agent’s outbound call (except phones switched OFF)?')) return;
+  send({ op: 'mode', mode: m }, NOTES[m]).then(() => { if (m === 'some') location.href = 'callfilter-phones.html'; });
+}));
+$('max').addEventListener('focus', () => { editing = true; });
+$('max').addEventListener('blur', () => { editing = false; });
+$('max').addEventListener('change', () => {
+  const v = parseInt($('max').value, 10);
+  if (!(v >= 0 && v <= 500)) { say('Max is 0 to 500.', true); return; }
+  send({ op: 'max', value: v }, v ? 'At most ' + v + ' cleaned calls at once.' : 'No limit on cleaned calls.');
+});
+$('strength').addEventListener('focus', () => { editing = true; });
+$('strength').addEventListener('blur', () => { editing = false; });
+$('strength').addEventListener('change', () => {
+  const v = parseInt($('strength').value, 10);
+  if (!(v >= 1 && v <= 100)) { say('Strength is 1 to 100.', true); return; }
+  send({ op: 'strength', value: v }, 'Strength ' + v + '% for new calls.');
+});
+load();
+setInterval(() => { if (!editing) load(); }, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+# build output: never commit binaries or the RNNoise build tree
+*.so
+*.o
+module/build/
+build/
+dist/
+*.wav
+*.log
+.claude/
+__pycache__/
