@@ -22,7 +22,8 @@ It never filters a call on an emergency route.
 
 It has two cleaning engines, and you pick one per PBX on the dashboard or with one AstDB key.
 RNNoise, the default, is light enough to clean a whole call centre on one PBX. DeepFilterNet
-removes more of your colleagues' voices in the background and costs about 8 times the CPU.
+removes more of your colleagues' voices in the background and costs about 8 times the CPU. It
+needs a recent CPU with AVX2: on an older server it cannot keep up with even one call.
 
 In a test of 824 recordings sent through Asterisk as phone audio, the PESQ speech quality score
 went from 2.90 to 3.31 with RNNoise and to 3.63 with DeepFilterNet. Asterisk's built-in `DENOISE()`
@@ -149,6 +150,14 @@ patch in `module/dfn/patches/` and builds with the pinned `Cargo.lock`. The DFN3
 the library. The build needs about 1.5 GB of RAM per job (`JOBS=1` on a small box) and 3 minutes on
 an i5-12500.
 
+**Check the PBX's CPU before you switch any phone to DeepFilterNet.** It needs AVX2
+(`grep -c avx2 /proc/cpuinfo` must not print 0). On an Intel Xeon E5620 (2010, no AVX) one
+DeepFilterNet call took 23.3 ms on average and 34 ms at worst per 20 ms frame inside Asterisk,
+with 16 other calls on the box. That is slower than real time, so the call breaks up. The bare
+library on the same CPU took 11.6 ms per frame, and RNNoise took 1.12 ms. Before you use it, make
+one test call with DeepFilterNet and run `astrinoise show stats`: the `engine deepfilter` line's
+`avg_us` must stay well under 10000 (10 ms) and `max_us` under 20000.
+
 Why a library of our own, and not DeepFilterNet's LADSPA plugin or C API:
 
 - The LADSPA plugin starts a worker thread for each instance that polls every 2 ms and never exits,
@@ -250,7 +259,8 @@ On an i5-12500 with Asterisk 22.11 we measured, for 30 RNNoise calls at once ove
 
 On a 2010 Xeon without AVX the same code took about 3x as long (~0.9 ms per frame per call).
 With DeepFilterNet, 15 calls at once took 2.4 ms per frame and 1.7 cores, and 30 calls overloaded
-the lab box's 4 cores. We have not run DeepFilterNet on a CPU without AVX.
+the lab box's 4 cores. On a Xeon E5620 without AVX, one DeepFilterNet call took 23.3 ms per
+20 ms frame, slower than real time, so DeepFilterNet is not usable on that CPU.
 Full tables: [lab/RESULTS.md](lab/RESULTS.md).
 
 Quality on the 824-file VoiceBank+DEMAND test set, sent through Asterisk as G.711 phone audio
@@ -314,6 +324,8 @@ the noise. [lab/EVAL.md](lab/EVAL.md) has the measurements.
 - The module adds a fixed 50 ms (RNNoise) or 60 ms (DeepFilterNet) to each cleaned direction.
 - CPU cost grows with the number of cleaned calls. Set `max` on small boxes, and lower it before you
   switch to DeepFilterNet.
+- DeepFilterNet needs a CPU with AVX2. On a Xeon E5620 it ran slower than real time with one
+  call. Check `avg_us` in `astrinoise show stats` on a test call first.
 - `libastrinoise_dfn.so` is built for x86-64 Linux only. We have not built it for ARM.
 - Each Asterisk version needs its own build. Rebuild after every Asterisk upgrade.
 - We tested on Asterisk 22 (FreePBX 17) only. The audiohook API is the same in Asterisk 18-21, but

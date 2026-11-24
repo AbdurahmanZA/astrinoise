@@ -58,6 +58,19 @@ average over the run, in cores, counting the Local channels and the clip playbac
   thread. Every later call gets a copy that shares the model's weights: 0.0-0.6 ms and no memory we
   can measure. The model itself adds about 33 MB to Asterisk once.
 
+### On an older CPU (Intel Xeon E5620, 2010, no AVX)
+Measured on a production FreePBX 17 / Asterisk 22.11 box with 4 vCPU of that CPU, on 2026-11-24.
+
+| Test | avg per 20 ms frame | slowest frame |
+|---|---|---|
+| DeepFilterNet inside Asterisk, one echo test call, 16 other calls on the box | 23.3 ms | 34 ms |
+| DeepFilterNet library alone (`dlopen` probe, no Asterisk) | 11.6 ms | |
+| RNNoise inside Asterisk | 1.12 ms | |
+
+Every DeepFilterNet frame took over 10 ms, and the average was slower than real time, so the call
+breaks up. Inside Asterisk it cost about twice the bare library. DeepFilterNet needs a CPU with AVX2;
+on a box like this one, use RNNoise. That PBX now refuses the DeepFilterNet engine on its dashboard.
+
 ### Memory and threads
 | Test | Result |
 |---|---|
