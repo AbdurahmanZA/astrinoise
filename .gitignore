@@ -2,6 +2,7 @@
 *.so
 *.o
 module/build/
+module/dfn/target/
 build/
 dist/
 *.wav

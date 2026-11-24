@@ -4,7 +4,7 @@ import numpy as np
 E = '/root/eval'
 meta = {r['id']: r for r in csv.DictReader(open(E + '/map.csv'))}
 rows = list(csv.DictReader(open(E + '/scores.csv')))
-ORDER = ['clean', 'input', 'none', 'denoise', 'rnn60', 'rnn80', 'rnn100']
+ORDER = ['clean', 'input', 'none', 'denoise', 'rnn60', 'rnn80', 'rnn100', 'dfn60', 'dfn80', 'dfn100']
 K = ['pesq_nb', 'stoi', 'estoi', 'sisdr', 'sig', 'bak', 'ovrl']
 def table(group):
     keys = sorted({group(r) for r in rows}, key=lambda g: (g[0], ORDER.index(g[1]) if g[1] in ORDER else 9))
@@ -18,4 +18,4 @@ table(lambda r: ('all', r['mode']))
 table(lambda r: (meta[r['id']]['noise'], r['mode']))
 table(lambda r: ('snr%04.1f' % float(meta[r['id']]['snr']), r['mode']))
 lags = [int(r['lag']) for r in rows if r['mode'] in ('none', 'rnn100')]
-print('lags (samples) none/rnn100 median:', {m: int(np.median([int(r['lag']) for r in rows if r['mode'] == m])) for m in ('none', 'denoise', 'rnn100', 'rnn60') if any(r['mode'] == m for r in rows)})
+print('lags (samples) none/rnn100 median:', {m: int(np.median([int(r['lag']) for r in rows if r['mode'] == m])) for m in ('none', 'denoise', 'rnn100', 'rnn60', 'dfn100', 'dfn60') if any(r['mode'] == m for r in rows)})

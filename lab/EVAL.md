@@ -1,4 +1,4 @@
-# Quality evaluation (2026-11-23)
+# Quality evaluation (RNNoise 2026-11-23, DeepFilterNet 2026-11-24)
 
 We sent the full VoiceBank+DEMAND test set through real Asterisk calls as phone audio and scored
 every condition against the clean recordings.
@@ -18,7 +18,9 @@ every condition against the clean recordings.
 - **Conditions:**
   - no filter
   - Asterisk's stock `DENOISE()` (func_speex)
-  - `ASTRINOISE` at 100, 80 and 60 % strength
+  - `ASTRINOISE` at 100, 80 and 60 % strength, with RNNoise
+  - `ASTRINOISE(rx,deepfilter)` at 100, 80 and 60 %, with DeepFilterNet (see
+    [DeepFilterNet](#deepfilternet-2026-11-24) below)
 - **Scores** (`score.py`):
   - **PESQ** (ITU-T P.862, narrowband): overall speech quality, 1-4.5.
   - **STOI** and **ESTOI**: intelligibility, 0-1.
@@ -138,12 +140,105 @@ Both runs had 20 calls at a time, on a container sharing a busy host.
 - No listening test with people, and no speech-recognition word error rate yet. Both would
   measure the consonant question directly.
 
+## DeepFilterNet (2026-11-24)
+
+We ran the same 824 files through the same call path with `ASTRINOISE(rx,deepfilter)` at 100, 80
+and 60 %, 20 calls at a time, on Asterisk 22.11 with `libastrinoise_dfn` 0.1.0 (DeepFilterNet 0.5.6,
+DFN3 model). The RNNoise rows are the ones above.
+
+| Condition | PESQ | STOI | ESTOI | SI-SDR | SIG | BAK | OVRL |
+|---|---|---|---|---|---|---|---|
+| No filter | 2.90 | 0.920 | 0.783 | 8.4 | 3.35 | 3.15 | 2.71 |
+| RNNoise 80 % | 3.31 | 0.930 | 0.821 | 13.7 | 3.36 | 3.73 | 2.96 |
+| RNNoise 100 % | 3.22 | 0.909 | 0.814 | 13.2 | 3.29 | 3.99 | 3.00 |
+| DeepFilterNet 60 % | 3.20 | 0.932 | 0.817 | 13.7 | 3.36 | 3.57 | 2.88 |
+| DeepFilterNet 80 % | 3.40 | 0.935 | 0.831 | 16.0 | 3.38 | 3.76 | 2.98 |
+| **DeepFilterNet 100 %** | **3.63** | 0.932 | **0.843** | **17.8** | 3.36 | **4.05** | **3.09** |
+
+- **DeepFilterNet at 100 % is the best result in this test.** PESQ goes up 0.73 from no filter
+  (RNNoise's best is +0.41 at 80 %), SI-SDR by 9.4 dB, and the background score reaches the clean
+  recording's 4.05. The voice score stays where it was (3.36 against 3.35).
+- **Unlike RNNoise, DeepFilterNet scores best at 100 %.** Mixing the original back in only adds
+  noise back. Use strength 100 with DeepFilterNet.
+- **It helps most where RNNoise struggles.** In cafe noise, the closest to colleagues talking,
+  PESQ goes from 2.35 to 3.18 (RNNoise: 2.76 at 80 %) and the background from 2.59 to 4.05. At
+  2.5 dB SNR, PESQ goes from 2.34 to 3.20 (RNNoise: 2.77).
+
+### By noise type (PESQ / BAK)
+
+| Noise | No filter | RNNoise 80 % | RNNoise 100 % | DFN 80 % | DFN 100 % |
+|---|---|---|---|---|---|
+| Bus | 3.37 / 3.53 | 3.74 / 3.94 | 3.64 / 4.03 | 3.78 / 3.93 | 3.92 / 4.04 |
+| Cafe | 2.35 / 2.59 | 2.76 / 3.41 | 2.63 / 3.96 | 2.89 / 3.47 | 3.18 / 4.05 |
+| Living room | 2.59 / 2.79 | 3.02 / 3.55 | 2.95 / 3.94 | 3.14 / 3.64 | 3.49 / 4.05 |
+| Office | 3.46 / 3.76 | 3.84 / 4.03 | 3.79 / 4.04 | 3.86 / 4.01 | 3.98 / 4.06 |
+| Public square | 2.75 / 3.08 | 3.22 / 3.71 | 3.12 / 3.97 | 3.31 / 3.74 | 3.59 / 4.06 |
+
+### By noise level (PESQ / BAK)
+
+| SNR | No filter | RNNoise 80 % | DFN 100 % |
+|---|---|---|---|
+| 2.5 dB | 2.34 / 2.51 | 2.77 / 3.42 | 3.20 / 4.03 |
+| 7.5 dB | 2.75 / 3.08 | 3.20 / 3.71 | 3.61 / 4.07 |
+| 12.5 dB | 3.09 / 3.39 | 3.50 / 3.84 | 3.77 / 4.06 |
+| 17.5 dB | 3.44 / 3.61 | 3.79 / 3.95 | 3.96 / 4.05 |
+
+### Our call-centre clips (DNSMOS, both engines at 100 %)
+
+| Clip | SIG raw / RNNoise / DFN | BAK raw / RNNoise / DFN | OVRL raw / RNNoise / DFN |
+|---|---|---|---|
+| Fan + hum | 3.65 / 3.42 / 3.50 | 3.00 / 4.11 / 4.13 | 2.81 / 3.20 / 3.27 |
+| Busy office | 3.61 / 3.13 / 3.26 | 2.27 / 3.75 / 4.10 | 2.36 / 2.77 / 3.03 |
+| Colleagues talking | 3.58 / 3.14 / 3.35 | 2.58 / 3.82 / 3.99 | 2.53 / 2.81 / 3.06 |
+| Keyboard | 3.49 / 3.36 / 3.54 | 2.93 / 4.04 / 4.14 | 2.65 / 3.10 / 3.31 |
+| Voice alone | 3.59 / 3.57 / 3.58 | 4.17 / 4.15 / 4.20 | 3.36 / 3.35 / 3.38 |
+
+DeepFilterNet scores higher than RNNoise on every clip and every score. With colleagues talking it
+loses 0.23 of voice score where RNNoise loses 0.44, and it leaves a clean voice as it was.
+
+### Two mistakes we caught on the way
+
+Our first DeepFilterNet build scored worse than no filter (PESQ 2.34 at 100 %). We found two causes.
+
+1. **Stage thresholds.** `lab/eval/dfn-check.py` runs DFN3 on the original 48 kHz files and scores
+   PESQ-WB, the way DeepFilterNet publishes its results. Our library scored 2.02, DeepFilterNet's
+   own `deep-filter` tool 2.90 on the same 52 files. DeepFilterNet skips its decoder on frames whose
+   estimated SNR is outside a range; the library's defaults (-10, 30, 20 dB) differ from the tool's
+   (-15, 35, 35 dB). With the tool's values our library scores 3.00.
+2. **The empty band above 4 kHz.** A phone call upsampled to 48 kHz has nothing above 4 kHz. Through
+   the module's speexdsp resamplers DFN3 scored PESQ-NB 2.94 on the 52 files; through scipy's
+   resampler, which leaves a faint floor up there, 3.15. Adding quiet noise above 5 kHz before
+   DeepFilterNet (and only there) gave 3.54: the module's band fill (`fill_setup()` in
+   `func_astrinoise.c`). The score stays flat from 0.02 to 0.1 RMS. The downsampler removes the
+   noise, so the caller never hears it, and the strength mix uses the original audio.
+
+`dfn-check.py` after both fixes (every 16th test file):
+
+| | PESQ |
+|---|---|
+| Noisy, wideband (PESQ-WB) | 1.96 |
+| DeepFilterNet's `deep-filter` tool, wideband | 2.90 |
+| astrinoise-dfn, wideband | 3.00 |
+| Noisy, phone band (PESQ-NB) | 2.86 |
+| astrinoise-dfn, phone band (scipy resampling) | 3.18 |
+
+### CPU during the DeepFilterNet test
+
+| Run | Frames | Avg per 20 ms | Slowest | Shortfalls |
+|---|---|---|---|---|
+| DeepFilterNet 100, 80 and 60 %, 20 calls at a time | 312,003 | 2.75 ms | 57.5 ms | 0 |
+
+About 8.5 times the CPU of RNNoise in the same test. See [RESULTS.md](RESULTS.md) for the soak tests.
+
 ## What to do with it
 
-1. Set strength **80** as the default once the fixed build is on a PBX. It is the best balance
-   of voice, intelligibility and background. Use 100 only where the background matters more
-   than a slightly thinner voice.
-2. Ship the fixed build to every PBX that has the old one before anyone uses strength 1-99.
-3. Next quality step (from the research): retrain RNNoise on phone-band, G.711-coded speech. It
+1. With RNNoise, set strength **80** as the default once the fixed build is on a PBX. It is the
+   best balance of voice, intelligibility and background. Use 100 only where the background
+   matters more than a slightly thinner voice.
+2. With DeepFilterNet, use strength **100**. It beats every RNNoise setting on PESQ, ESTOI,
+   SI-SDR, background and overall, and matches RNNoise 80 % on the voice score, for about 8.5
+   times the CPU. Size `max` for it first (see the README).
+3. Ship the fixed build to every PBX that has the old one before anyone uses strength 1-99.
+4. Next quality step for RNNoise (from the research): retrain RNNoise on phone-band, G.711-coded speech. It
    keeps the same CPU and code, and only the weights file changes. GTCRN or FastEnhancer-Tiny
    through ONNX Runtime are the next candidates if retraining is not enough.

@@ -24,8 +24,8 @@ with. You can change the same keys by hand (`asterisk -rx 'database put rnnoise 
 page shows it on its next 5 s refresh.
 
 **The PHP checks every value before it touches Asterisk.** It knows only these changes: `mode` off,
-all or some; `strength` 1-100; `max` 0-500; `phones` with a list of 1-1000 phone numbers of 2-8
-digits and a state of on, off or clear. Anything else gets a 400. The numbers go into
+all or some; `strength` 1-100; `max` 0-500; `engine` rnnoise or deepfilter; `phones` with a list of
+1-1000 phone numbers of 2-8 digits and a state of on, off or clear. Anything else gets a 400. The numbers go into
 `asterisk -rx` only after those checks, and the whole command passes through `escapeshellarg`.
 
 **Every change is logged.** Each accepted change adds a line with the time and the browser's address
@@ -41,9 +41,12 @@ own. On FreePBX an Apache `<Directory>` block with `Require ip <your admin netwo
 
 **Call filter** (`callfilter.html`)
 - Off / All calls / Some calls.
+- Engine: RNNoise or DeepFilterNet. The DeepFilterNet button is greyed out when
+  `libastrinoise_dfn.so` is not installed on the PBX.
 - Strength, and the most cleaned calls at once.
 - Module loaded or not, calls being cleaned now, work per 20 ms frame (average and slowest), late
-  audio (must stay 0) and minutes cleaned, from `astrinoise show stats`.
+  audio (must stay 0) and minutes cleaned, from `astrinoise show stats`, with a line per engine
+  that has cleaned audio since the last reset.
 - How to test it from a desk phone, and what it does and does not do.
 
 **Phones** (`callfilter-phones.html`)
@@ -82,9 +85,10 @@ Use `all-`, `some-` or `off-`, then the phone, and add `-e` to test an emergency
 
 ## Sizing `max`
 
-One cleaned call costs its `avg_us` per 20 ms of one core. At 0.3 ms (a recent desktop CPU) that is
-1.5 % of a core per call; at 1 ms (a 2010 Xeon) it is 5 %. Set `max` so the worst case leaves the
-box room for everything else.
+One cleaned call costs its `avg_us` per 20 ms of one core. With RNNoise at 0.3 ms (a recent desktop
+CPU) that is 1.5 % of a core per call; at 1 ms (a 2010 Xeon) it is 5 %. DeepFilterNet costs several
+times more: see the engine table in the README. Set `max` so the worst case leaves the box room for
+everything else, and lower it before you switch a busy PBX to DeepFilterNet.
 
 ## Install
 

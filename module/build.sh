@@ -33,7 +33,7 @@ gcc -fPIC -shared -O2 -g -Wall -Wno-unused-result \
   -D_GNU_SOURCE ${EXTRA_CFLAGS:-} -DAST_MODULE=\"func_astrinoise\" -DAST_MODULE_SELF_SYM=__internal_func_astrinoise_self \
   -I"$AST_INC" -I"$B/rnnoise/include" \
   "$HERE/func_astrinoise.c" -o "$HERE/func_astrinoise.so" \
-  "$B/rnnoise/lib/librnnoise.a" -lspeexdsp -lm -Wl,--exclude-libs,ALL -Wl,-z,defs \
+  "$B/rnnoise/lib/librnnoise.a" -lspeexdsp -lm -ldl -lpthread -Wl,--exclude-libs,ALL -Wl,-z,defs \
   -Wl,--unresolved-symbols=ignore-in-object-files
 ver=$(dpkg-query -W -f='${Version}' asterisk22-devel 2>/dev/null || asterisk -V 2>/dev/null || true)
 echo "built $HERE/func_astrinoise.so ($(du -h "$HERE/func_astrinoise.so" | cut -f1)) against asterisk ${ver:-?}"

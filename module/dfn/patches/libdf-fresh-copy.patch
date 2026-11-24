@@ -1,0 +1,20 @@
+--- a/libDF/src/tract.rs
++++ b/libDF/src/tract.rs
+@@ -364,6 +364,17 @@
+         Ok(m)
+     }
+ 
++    /// A copy for another audio stream (added by Astri-noise). It shares the read-only model
++    /// weights, which tract keeps in Arc, with `self`, and gets its own feature buffers. A plain
++    /// clone() shares erb_buf and cplx_buf, which process() writes in place, so two streams made
++    /// with clone() overwrite each other's features. `self` must not be processing during the copy.
++    pub fn fresh_copy(&self) -> Result<Self> {
++        let mut m = self.clone();
++        m.erb_buf = TValue::from(Tensor::zero::<f32>(&[self.ch, 1, 1, self.nb_erb])?);
++        m.cplx_buf = TValue::from(Tensor::zero::<f32>(&[self.ch, 1, self.nb_df, 2])?);
++        Ok(m)
++    }
++
+     pub fn set_pf_beta(&mut self, beta: f32) {
+         log::debug!("Setting post-filter beta to {beta}");
+         self.post_filter_beta = beta;

@@ -4,8 +4,10 @@
 // is dialled (extensions_override_freepbx.conf, [rnnoise-decide]):
 //   rnnoise/mode = off|all|some   rnnoise/strength = 1-100   rnnoise/ext/<phone> = on|off
 //   rnnoise/max = most cleaned calls at once (0 or missing = no limit)
-//   GET  -> {mode, strength, max, phones{ext: on|off}, module{loaded}, stats{...}}
-//   POST -> {"op":"mode","mode":"all"} | {"op":"strength","value":80} | {"op":"max","value":10} | {"op":"phones","exts":[...],"state":"on|off|clear"}
+//   rnnoise/engine = rnnoise|deepfilter (missing = rnnoise)
+//   GET  -> {mode, strength, max, engine, phones{ext: on|off}, module{loaded}, stats{...}, engines{name: {...}}}
+//   POST -> {"op":"mode","mode":"all"} | {"op":"strength","value":80} | {"op":"max","value":10}
+//           | {"op":"engine","engine":"deepfilter"} | {"op":"phones","exts":[...],"state":"on|off|clear"}
 // Every change is written to /var/log/asterisk/rnnoise-dash.log with the browser's address.
 header('Content-Type: application/json');
 header('Cache-Control: no-store');
@@ -23,19 +25,33 @@ function audit($what) {
         date('Y-m-d H:i:s') . ' ' . ($_SERVER['REMOTE_ADDR'] ?? '?') . ' ' . $what . "\n", FILE_APPEND);
 }
 function state() {
-    $mode = 'off'; $strength = 100; $max = 0; $phones = array();
+    $mode = 'off'; $strength = 100; $max = 0; $engine = 'rnnoise'; $phones = array();
     foreach (explode("\n", ast('database show rnnoise')) as $line) {
         if (preg_match('#^/rnnoise/mode\s*:\s*(\w+)#', $line, $m)) $mode = $m[1];
         elseif (preg_match('#^/rnnoise/strength\s*:\s*(\d+)#', $line, $m)) $strength = (int) $m[1];
         elseif (preg_match('#^/rnnoise/max\s*:\s*(\d+)#', $line, $m)) $max = (int) $m[1];
+        elseif (preg_match('#^/rnnoise/engine\s*:\s*(rnnoise|deepfilter)\b#', $line, $m)) $engine = $m[1];
         elseif (preg_match('#^/rnnoise/ext/(\d{2,8})\s*:\s*(on|off)#', $line, $m)) $phones[$m[1]] = $m[2];
     }
-    $stats = array();
-    if (preg_match_all('/(\w+)=([\d.]+)/', ast('astrinoise show stats'), $mm, PREG_SET_ORDER)) {
-        foreach ($mm as $m) $stats[$m[1]] = $m[2] + 0;
+    // First line: all engines together. Then "engine <name>: ..." per engine, and a "deepfilter:" line
+    // that says whether the DeepFilterNet library is installed.
+    $stats = array(); $engines = array(); $dfn = '';
+    foreach (explode("\n", ast('astrinoise show stats')) as $i => $line) {
+        if (preg_match('/^engine (\w+):(.*)$/', $line, $m)) {
+            $e = array('default' => strpos($m[2], ' default') !== false, 'available' => strpos($m[2], ' unavailable') === false);
+            if (preg_match_all('/(\w+)=([\d.]+)/', $m[2], $mm, PREG_SET_ORDER)) {
+                foreach ($mm as $kv) $e[$kv[1]] = $kv[2] + 0;
+            }
+            $engines[$m[1]] = $e;
+        } elseif (preg_match('/^deepfilter: (.*)$/', $line, $m)) {
+            $dfn = trim($m[1]);
+        } elseif (!$stats && preg_match_all('/(\w+)=([\d.]+)/', $line, $mm, PREG_SET_ORDER)) {
+            foreach ($mm as $kv) $stats[$kv[1]] = $kv[2] + 0;
+        }
     }
     return array('ok' => true, 'mode' => in_array($mode, array('off', 'all', 'some'), true) ? $mode : 'off',
-        'strength' => $strength, 'max' => $max, 'phones' => $phones,
+        'strength' => $strength, 'max' => $max, 'engine' => $engine, 'phones' => $phones,
+        'engines' => $engines, 'deepfilter' => $dfn,
         'module' => array('loaded' => strpos(ast('module show like func_astrinoise'), 'Running') !== false),
         'stats' => $stats, 'at' => date('Y-m-d H:i:s'));
 }
@@ -68,6 +84,12 @@ case 'max':
     if (!is_int($v) || $v < 0 || $v > 500) fail(400, 'max must be 0-500 (0 = no limit)');
     ast("database put rnnoise max $v");
     audit("max $v");
+    break;
+case 'engine':
+    $e = $op['engine'] ?? '';
+    if (!in_array($e, array('rnnoise', 'deepfilter'), true)) fail(400, 'engine must be rnnoise or deepfilter');
+    ast("database put rnnoise engine $e");
+    audit("engine $e");
     break;
 case 'phones':
     $exts = $op['exts'] ?? null;

@@ -17,7 +17,7 @@ from pystoi import stoi
 import onnxruntime as ort
 
 E = '/root/eval'
-MODES = sys.argv[1:] or ['input', 'none', 'denoise', 'rnn100', 'rnn80', 'rnn60', 'clean']
+MODES = sys.argv[1:] or ['input', 'none', 'denoise', 'rnn100', 'rnn80', 'rnn60', 'dfn100', 'dfn80', 'dfn60', 'clean']
 sess = None
 P_SIG = np.poly1d([-0.08397278, 1.22083953, 0.0052439])
 P_BAK = np.poly1d([-0.13166888, 1.60915514, -0.39604546])

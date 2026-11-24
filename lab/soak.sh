@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Lab only: keep N cleaned calls running for MINUTES (each call CALLSECS long, replaced as it ends),
 # logging ASTRINOISE timing, Asterisk CPU and memory every 30 s.   bash soak.sh 30 15 60 > soak.log
+# ENGINE=deepfilter bash soak.sh ...   tests DeepFilterNet instead of RNNoise.
 set -uo pipefail
 N=${1:-30}; MINUTES=${2:-15}; CALLSECS=${3:-60}
 CLIPS=(office fan chatter keyboard voice)
 # each test call is a Local channel pair = 2 "active calls" in Asterisk's count
 calls() { echo $(( $(asterisk -rx "core show channels count" | sed -n 2p | cut -d' ' -f1) / 2 )); }
+until [ "$(calls)" = 0 ]; do sleep 1; done   # start from an idle box
+asterisk -rx "dialplan set global ENGINE ${ENGINE:-rnnoise}" >/dev/null
 asterisk -rx "dialplan set global SECS $CALLSECS" >/dev/null
 asterisk -rx "astrinoise reset stats" >/dev/null
 PID=$(pidof asterisk)

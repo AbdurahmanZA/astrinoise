@@ -1,0 +1,21 @@
+[package]
+name = "astrinoise-dfn"
+version = "0.1.0"
+edition = "2021"
+description = "DeepFilterNet3 engine for Astri-noise (func_astrinoise): a small C API with no threads"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+name = "astrinoise_dfn"
+crate-type = ["cdylib"]
+
+[dependencies]
+# DeepFilterNet 0.5.6 (MIT OR Apache-2.0): build.sh puts the release source here and applies
+# patches/. "default-model" builds the DeepFilterNet3 model into the library: one file to install.
+deep_filter = { path = "target/DeepFilterNet/libDF", default-features = false, features = ["tract", "default-model"] }
+ndarray = "0.15"
+
+[profile.release]
+opt-level = 3
+panic = "unwind"   # every C entry point catches panics; nothing may unwind into Asterisk

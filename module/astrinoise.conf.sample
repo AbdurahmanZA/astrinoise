@@ -1,0 +1,10 @@
+; /etc/asterisk/astrinoise.conf (optional). Without this file the module uses the values below.
+; After a change: asterisk -rx 'module reload func_astrinoise.so'
+[general]
+; Engine for ASTRINOISE(rx) when the dialplan names none: rnnoise or deepfilter.
+; The FreePBX hook names one from AstDB rnnoise/engine, so on FreePBX set that key instead.
+engine = rnnoise
+
+; The optional DeepFilterNet engine. If the file is missing, deepfilter calls use rnnoise.
+; Read once, when the module loads.
+deepfilter_library = /usr/lib/astrinoise/libastrinoise_dfn.so

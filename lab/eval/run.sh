@@ -1,5 +1,5 @@
 #!/bin/bash
-# usage: bash run.sh <mode> [parallel]   modes: none denoise rnn100 rnn60
+# usage: bash run.sh <mode> [parallel]   modes: none denoise rnn100 rnn80 rnn60 dfn100 dfn80 dfn60
 set -u
 MODE=$1; N=${2:-20}
 mkdir -p /var/spool/asterisk/eval/$MODE; chown asterisk: /var/spool/asterisk/eval /var/spool/asterisk/eval/$MODE

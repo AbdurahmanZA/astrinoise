@@ -21,6 +21,7 @@
   .muted { color: #8a939b; font-size: 12px; }
   .btn { background: #f4f5f7; border: 1px solid #cfd3d8; border-radius: 6px; padding: 8px 14px; font-size: 13px; cursor: pointer; color: #24292e; }
   .btn:hover { background: #eceef1; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
   .btn.sel { background: #1971c2; color: #fff; border-color: #1971c2; }
   .btn.sel.off { background: #495057; border-color: #495057; }
   .modes { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 10px; }
@@ -49,6 +50,11 @@
     </div>
     <div id="modeNote" style="font-size:13px;margin-bottom:8px"></div>
     <div class="row"><span class="label">Phones switched on / off in the phone list</span><span><span id="phoneCounts"></span> · <a class="link" href="callfilter-phones.html">Open the phone list →</a></span></div>
+    <div class="row"><span class="label">Engine</span><span class="modes" style="margin:0">
+      <button class="btn" data-engine="rnnoise">RNNoise</button>
+      <button class="btn" data-engine="deepfilter">DeepFilterNet</button>
+    </span></div>
+    <div id="engineNote" class="muted" style="margin:2px 0 6px"></div>
     <div class="row"><span class="label">Strength (100 = full cleaning; lower mixes some of the original back in)</span><span><input type="number" id="strength" min="1" max="100" step="5"> %</span></div>
     <div class="row"><span class="label">Most cleaned calls at once (0 = no limit; more calls go out uncleaned)</span><input type="number" id="max" min="0" max="500"></div>
     <div class="row"><span class="label">Filter module in Asterisk</span><span id="module"></span></div>
@@ -59,10 +65,11 @@
     <div class="big" id="active">–</div>
     <div class="muted" style="margin-bottom:10px">calls being cleaned at this moment</div>
     <div class="row"><span class="label">Work per 20 ms of audio (average)</span><span id="avg"></span></div>
-    <div class="row"><span class="label">Slowest 20 ms so far (must stay well under 20 ms)</span><span id="max"></span></div>
+    <div class="row"><span class="label">Slowest 20 ms so far (must stay well under 20 ms)</span><span id="slowest"></span></div>
     <div class="row"><span class="label">Late audio (must stay 0)</span><span id="late"></span></div>
     <div class="row"><span class="label">Audio cleaned since the module started</span><span id="mins"></span></div>
-    <div class="muted" style="margin-top:6px">One cleaned call costs 1.5-5 % of one CPU core, depending on the CPU (see the work per 20 ms above).</div>
+    <div id="perEngine"></div>
+    <div class="muted" style="margin-top:6px">A cleaned call costs its work per 20 ms out of each 20 ms of one CPU core: 0.3 ms is 1.5 % of a core.</div>
   </div>
 
   <div class="card">
@@ -78,7 +85,7 @@
     <ul>
       <li>Cleans the agent's microphone (fans, hum, keyboards, background voices) on calls that go out through a trunk: desk phones and softphones. Internal calls are never touched.</li>
       <li>Never on an emergency route.</li>
-      <li>Adds a fixed 50 ms delay; the customer's voice is untouched.</li>
+      <li>Adds a fixed delay (RNNoise about 50 ms, DeepFilterNet a little more); the customer's voice is untouched.</li>
       <li>Recordings of outbound calls keep the agent's original voice.</li>
       <li><b>Off</b> stops it for every new call at once.</li>
     </ul>
@@ -88,6 +95,11 @@
 <script>
 const $ = (id) => document.getElementById(id);
 let S = null, editing = false;
+const ENGINE_NOTES = {
+  rnnoise: 'RNNoise: light on CPU, so one PBX can clean many calls at once. Good on fans, hum and keyboards. Strength 80 suits it best.',
+  deepfilter: 'DeepFilterNet: removes more of the people talking nearby, but each call needs about 8 times the CPU. Set a call limit below, and strength 100.',
+};
+const NAMES = { rnnoise: 'RNNoise', deepfilter: 'DeepFilterNet' };
 const NOTES = {
   off: 'Off: no call is cleaned.',
   all: 'All calls: every agent’s outbound call is cleaned, except phones switched OFF in the phone list.',
@@ -112,9 +124,21 @@ function render(d) {
   const s = d.stats || {};
   $('active').textContent = s.active ?? '–';
   $('avg').textContent = s.avg_us != null ? (s.avg_us / 1000).toFixed(2) + ' ms' : '–';
-  $('max').textContent = s.max_us != null ? (s.max_us / 1000).toFixed(1) + ' ms' : '–';
+  $('slowest').textContent = s.max_us != null ? (s.max_us / 1000).toFixed(1) + ' ms' : '–';
   $('late').innerHTML = s.underruns ? '<span class="chip bad">' + s.underruns + '</span>' : '<span class="chip ok">0</span>';
   $('mins').textContent = s.frames != null ? Math.round(s.frames / 50 / 60) + ' min' : '–';
+  const eng = d.engines || {}, dfnOk = eng.deepfilter ? eng.deepfilter.available : false;
+  document.querySelectorAll('[data-engine]').forEach((b) => {
+    b.className = 'btn' + (b.dataset.engine === d.engine ? ' sel' : '');
+    b.disabled = b.dataset.engine === 'deepfilter' && !dfnOk && d.engine !== 'deepfilter';
+    b.title = b.disabled ? 'DeepFilterNet is not installed on this PBX' : '';
+  });
+  $('engineNote').textContent = (ENGINE_NOTES[d.engine] || '') + (d.engine === 'deepfilter' && !dfnOk ? ' Not installed on this PBX, so calls use RNNoise.' : '');
+  $('perEngine').innerHTML = Object.keys(eng).filter((k) => eng[k].frames || eng[k].active).map((k) => {
+    const e = eng[k];
+    return '<div class="row"><span class="label">' + NAMES[k] + ': calls now / work per 20 ms / slowest</span><span>' + e.active + ' / ' +
+      (e.avg_us / 1000).toFixed(2) + ' ms / ' + (e.max_us / 1000).toFixed(1) + ' ms</span></div>';
+  }).join('');
 }
 function load() {
   fetch('callfilter.php', { cache: 'no-store' }).then((r) => r.json()).then(render).catch(() => say('Could not reach the PBX.', true));
@@ -124,6 +148,12 @@ document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('clic
   if (!S || m === S.mode) { if (m === 'some') location.href = 'callfilter-phones.html'; return; }
   if (m === 'all' && !confirm('Clean EVERY agent’s outbound call (except phones switched OFF)?')) return;
   send({ op: 'mode', mode: m }, NOTES[m]).then(() => { if (m === 'some') location.href = 'callfilter-phones.html'; });
+}));
+document.querySelectorAll('[data-engine]').forEach((b) => b.addEventListener('click', () => {
+  const e = b.dataset.engine;
+  if (!S || e === S.engine) return;
+  if (e === 'deepfilter' && !confirm('Use DeepFilterNet for new calls? Each call needs several times the CPU of RNNoise.')) return;
+  send({ op: 'engine', engine: e }, NAMES[e] + ' for new calls. Calls already up keep their engine.');
 }));
 $('max').addEventListener('focus', () => { editing = true; });
 $('max').addEventListener('blur', () => { editing = false; });

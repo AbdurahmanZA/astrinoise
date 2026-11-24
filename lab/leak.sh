@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Lab only: Asterisk memory after many short calls, without and with ASTRINOISE (same call pattern).
-#   bash leak.sh 400 -> RSS growth per 100 calls for load-raw vs load-test
+#   bash leak.sh 400 -> RSS growth per 100 calls for load-raw vs load-test   (ENGINE=deepfilter for DeepFilterNet)
 set -uo pipefail
 TOTAL=${1:-400}
 calls() { echo $(( $(asterisk -rx "core show channels count" | sed -n 2p | cut -d' ' -f1) / 2 )); }
 rss() { awk '/VmRSS/{print $2}' /proc/$(pidof asterisk)/status; }
+asterisk -rx "dialplan set global ENGINE ${ENGINE:-rnnoise}" >/dev/null
 asterisk -rx "dialplan set global SECS 2" >/dev/null
 for ctx in load-raw load-test load-raw load-test; do
   until [ "$(calls)" = 0 ]; do sleep 1; done; sleep 2
